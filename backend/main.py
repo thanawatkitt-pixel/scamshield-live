@@ -131,6 +131,132 @@ async def text_to_speech(payload: VoiceGenerationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {str(e)}")
 
+# ============================================================
+# Frontend Aliases & Rich Responses (/api/scan/*)
+# ============================================================
+
+@app.post("/api/scan/message", tags=["Frontend Bridge"])
+async def scan_message_bridge(data: dict):
+    message = data.get("message", "")
+    analysis_res = await analyze_scam_text(message)
+    
+    # แปลงระดับความเสี่ยงเป็นระดับที่ frontend ใช้ (safe, suspicious, dangerous)
+    risk_level = analysis_res.get("risk_level", "LOW").lower()
+    if risk_level in ["critical", "high"]:
+        threat_level = "dangerous"
+    elif risk_level == "medium":
+        threat_level = "suspicious"
+    else:
+        threat_level = "safe"
+
+    red_flags = [
+        {"text": flag, "reason_th": "พบรูปแบบข้อความน่าสงสัย", "severity": "critical" if threat_level == "dangerous" else "warning"}
+        for flag in analysis_res.get("red_flags", [])
+    ]
+    if not red_flags and threat_level != "safe":
+        red_flags.append({"text": message[:50] + "...", "reason_th": analysis_res.get("explanation", ""), "severity": "warning"})
+
+    return {
+        "analysis": {
+            "threat_level": threat_level,
+            "threat_score": analysis_res.get("risk_score", 0),
+            "scam_type_th": analysis_res.get("scam_type") or "ข้อความทั่วไป",
+            "summary_th": analysis_res.get("explanation", ""),
+            "recommended_action_th": analysis_res.get("recommended_action", ""),
+            "red_flags": red_flags
+        },
+        "voice_warning": {
+            "audio_base64": None,
+            "script_th": analysis_res.get("recommended_action", "")
+        }
+    }
+
+@app.post("/api/scan/link", tags=["Frontend Bridge"])
+async def scan_link_bridge(data: dict):
+    url = data.get("url", "")
+    link_res = await analyze_url(url)
+    
+    risk_level = link_res.get("risk_level", "SAFE").lower()
+    if risk_level == "dangerous":
+        threat_level = "dangerous"
+    elif risk_level == "suspicious":
+        threat_level = "suspicious"
+    else:
+        threat_level = "safe"
+
+    red_flags = [
+        {"text": flag, "reason_th": "ตรวจพบความผิดปกติของลิงก์", "severity": "critical" if threat_level == "dangerous" else "warning"}
+        for flag in link_res.get("flags", [])
+    ]
+
+    return {
+        "analysis": {
+            "threat_level": threat_level,
+            "threat_score": link_res.get("risk_score", 0),
+            "scam_type_th": f"ฟิชชิ่ง / เลียนแบบแบรนด์ ({link_res.get('matched_brand')})" if link_res.get("matched_brand") else "ลิงก์ต้องสงสัย",
+            "summary_th": link_res.get("explanation", ""),
+            "recommended_action_th": link_res.get("recommended_action", ""),
+            "red_flags": red_flags
+        },
+        "url_structure": {
+            "domain": link_res.get("domain", ""),
+            "is_ip": False,
+            "tld": "." + link_res.get("domain", "").split(".")[-1] if "." in link_res.get("domain", "") else ""
+        }
+    }
+
+@app.post("/api/scan/voice/transcript", tags=["Frontend Bridge"])
+async def scan_voice_transcript_bridge(data: dict):
+    transcript = data.get("transcript", "")
+    analysis_res = await analyze_scam_text(transcript, context="บทสนทนาจากการโทรศัพท์")
+    
+    risk_level = analysis_res.get("risk_level", "LOW").lower()
+    if risk_level in ["critical", "high"]:
+        threat_level = "dangerous"
+    elif risk_level == "medium":
+        threat_level = "suspicious"
+    else:
+        threat_level = "safe"
+
+    return {
+        "analysis": {
+            "threat_level": threat_level,
+            "threat_score": analysis_res.get("risk_score", 0),
+            "scam_type_th": analysis_res.get("scam_type") or "สายโทรคอลเซ็นเตอร์หลอกลวง",
+            "summary_th": analysis_res.get("explanation", ""),
+            "recommended_action_th": analysis_res.get("recommended_action", ""),
+            "red_flags": [
+                {"text": flag, "reason_th": "ตรวจพบคำพูดกดดันหรือหลอกล่อ", "severity": "critical"}
+                for flag in analysis_res.get("red_flags", [])
+            ]
+        }
+    }
+
+@app.post("/api/counter-scam/start", tags=["Frontend Bridge"])
+async def start_counter_scam_bridge(scam_type: str = "general"):
+    return {
+        "session_id": "session_" + os.urandom(4).hex(),
+        "status": "ready",
+        "agent_greeting": "สวัสดีค่ะ มีเรื่องอะไรให้ป้าช่วยไหมลูก พอดีโทรศัพท์ป้าจอมันไม่ค่อยดีจ้ะ"
+    }
+
+@app.post("/api/counter-scam/turn", tags=["Frontend Bridge"])
+async def counter_scam_turn_bridge(data: dict):
+    message = data.get("scammer_message", "")
+    conv_history = data.get("conversation_history", [])
+    history_formatted = [
+        {"role": "scammer" if item.get("speaker") == "scammer" else "assistant", "content": item.get("text", "")}
+        for item in conv_history
+    ]
+    res = await generate_counter_response(message=message, history=history_formatted)
+    
+    return {
+        "reply": res.get("reply", ""),
+        "intent_detected": res.get("intent_detected", "พยายามเร่งรัดให้โอนเงิน"),
+        "stalling_tactic": res.get("stalling_tactic", "แกล้งงงขั้นตอน"),
+        "extracted_info": data.get("extracted_info", {})
+    }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
