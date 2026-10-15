@@ -1,0 +1,26 @@
+import type { Metadata } from "next";
+import "./globals.css";
+import Navbar from "@/components/Navbar";
+
+export const metadata: Metadata = {
+  title: "ScamShield Live — รู้ทันมิจฉาชีพใน 3 วินาที",
+  description:
+    "AI-Powered Scam Detection สำหรับข้อความ ลิงก์ และเสียง ตรวจจับและรายงานมิจฉาชีพแบบเรียลไทม์",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="th">
+      <body className="min-h-screen bg-shield-dark text-slate-100">
+        <Navbar />
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          {children}
+        </main>
+      </body>
+    </html>
+  );
+}
