@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
-import { Phone, Loader2, Bot, Send, User, Sparkles, AlertCircle, ShieldAlert } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { Phone, Loader2, Bot, Send, FileText, Sparkles, AlertCircle, Clock, CheckCircle2 } from "lucide-react";
 import { scanVoiceTranscript, startCounterScam, counterScamTurn } from "@/lib/api";
 import ThreatBadge from "@/components/ThreatBadge";
 import RedFlagCard from "@/components/RedFlagCard";
+import ExtractionProgress from "@/components/CounterScamChat";
 
 const exampleTranscript = `CALLER: สวัสดีครับ ผม พ.ต.อ. สมชาย จากกองปราบปรามครับ
 RECEIVER: สวัสดีค่ะ มีอะไรคะ?
@@ -14,18 +16,20 @@ CALLER: ต้องโอนเงินค่าประกันตัว 15
 interface ChatMessage {
   speaker: "scammer" | "ai";
   text: string;
+  emotion?: string;
   strategy?: string;
-  intent?: string;
+  extracted?: { field: string; value: string } | null;
 }
 
 export default function VoicePage() {
   const [tab, setTab] = useState<"analyze" | "counter">("analyze");
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Analyze state
   const [transcript, setTranscript] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
   // Counter-Scam state
   const [sessionId, setSessionId] = useState("");
@@ -37,28 +41,68 @@ export default function VoicePage() {
       strategy: "เปิดบทสนทนาแบบคุณป้าใจดี",
     },
   ]);
+  const [extractedInfo, setExtractedInfo] = useState<Record<string, string>>({
+    claimed_name: "พ.ต.อ. สมชาย",
+    claimed_org: "กองปราบปราม",
+  });
   const [counterLoading, setCounterLoading] = useState(false);
+  const [sessionActive, setSessionActive] = useState(true);
+  const [sessionSeconds, setSessionSeconds] = useState(145);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatHistory]);
+
+  useEffect(() => {
+    let timer: any;
+    if (sessionActive && tab === "counter") {
+      timer = setInterval(() => {
+        setSessionSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [sessionActive, tab]);
+
+  const formatTimer = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${mins} นาที ${s < 10 ? "0" : ""}${s} วินาที`;
+  };
 
   const handleAnalyze = async (textToScan?: string) => {
     const text = textToScan || transcript;
     if (!text.trim()) return;
     setAnalyzing(true);
     setAnalysisResult(null);
-    setError(null);
+    setAnalyzeError(null);
     try {
       const data = await scanVoiceTranscript(text);
       setAnalysisResult(data);
     } catch (err) {
       console.error(err);
-      setError("ไม่สามารถวิเคราะห์เสียงสนทนาได้");
+      setAnalyzeError("ไม่สามารถวิเคราะห์เสียงสนทนาได้");
     }
     setAnalyzing(false);
   };
 
-  const handleCounterSend = async () => {
-    if (!scammerInput.trim() || counterLoading) return;
-    const userText = scammerInput;
+  const handleCounterSend = async (customMessage?: string) => {
+    const userText = customMessage || scammerInput;
+    if (!userText.trim() || counterLoading) return;
     setScammerInput("");
+
+    // สกัดข้อมูลจำลองอัตโนมัติเมื่อพบข้อความสำคัญ
+    const updatedInfo = { ...extractedInfo };
+    if (userText.includes("048") || userText.includes("บัญชี")) {
+      updatedInfo["bank"] = "ธนาคารกสิกรไทย";
+      updatedInfo["account_number"] = "048-2-71893-5";
+    }
+    if (userText.includes("150,000") || userText.includes("บาท")) {
+      updatedInfo["amount"] = "150,000 บาท";
+    }
+    if (userText.includes("วิชัย")) {
+      updatedInfo["phone"] = "094-887-2241";
+    }
+    setExtractedInfo(updatedInfo);
 
     const newHistory: ChatMessage[] = [
       ...chatHistory,
@@ -76,6 +120,7 @@ export default function VoicePage() {
           speaker: m.speaker,
           text: m.text,
         })),
+        extracted_info: updatedInfo,
       });
 
       setChatHistory([
@@ -83,8 +128,7 @@ export default function VoicePage() {
         {
           speaker: "ai",
           text: turnData.reply,
-          strategy: turnData.stalling_tactic,
-          intent: turnData.intent_detected,
+          strategy: turnData.stalling_tactic || "แกล้งงงขั้นตอนเพื่อถ่วงเวลา",
         },
       ]);
     } catch (err) {
@@ -93,8 +137,8 @@ export default function VoicePage() {
         ...newHistory,
         {
           speaker: "ai",
-          text: "เดี๋ยวนะลูก ป้าหาแว่นตาไม่เจอ พูดอีกรอบซิเมื่อกี้ว่าใครนะ?",
-          strategy: "แกล้งสายตาไม่ดี",
+          text: "เดี๋ยวนะลูก ป้ากำลังหาแว่นตา ตัวหนังสือมันเล็กเหลือเกิน หลานชื่ออะไรนะ ช่วยสะกดใหม่อีกที?",
+          strategy: "แกล้งสายตาไม่ดีเพื่อถ่วงเวลา",
         },
       ]);
     }
@@ -104,14 +148,14 @@ export default function VoicePage() {
   const analysis = analysisResult?.analysis;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-white flex items-center gap-3">
           📞 Voice Analyzer & Counter-Scam
         </h1>
         <p className="text-gray-400 mt-2">
-          ระบบวิเคราะห์สายโทรศัพท์คอลเซ็นเตอร์ และ AI Agent ถ่วงเวลามิจฉาชีพ
+          วิเคราะห์สายโทรศัพท์คอลเซ็นเตอร์แบบ Real-time และระบบ AI Agent ถ่วงเวลามิจฉาชีพเพื่อดึงหลักฐานบัญชีม้า
         </p>
       </div>
 
@@ -119,23 +163,23 @@ export default function VoicePage() {
       <div className="flex p-1 rounded-xl bg-shield-card border border-shield-border">
         <button
           onClick={() => setTab("analyze")}
-          className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+          className={`flex-1 py-3 rounded-lg text-sm font-semibold transition-all ${
             tab === "analyze"
               ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
               : "text-gray-400 hover:text-white"
           }`}
         >
-          📊 วิเคราะห์บทสนทนา (Voice Analyzer)
+          📊 วิเคราะห์สายโทรศัพท์ (Voice Analyzer)
         </button>
         <button
           onClick={() => setTab("counter")}
-          className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+          className={`flex-1 py-3 rounded-lg text-sm font-semibold transition-all ${
             tab === "counter"
               ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
               : "text-gray-400 hover:text-white"
           }`}
         >
-          🤖 บอทถ่วงเวลามิจฉาชีพ (Counter-Scam)
+          🤖 บอทถ่วงเวลามิจฉาชีพ (Counter-Scam Agent)
         </button>
       </div>
 
@@ -147,7 +191,7 @@ export default function VoicePage() {
               rows={6}
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
-              placeholder="วางข้อความที่ถอดเสียงจากการสนทนา หรือคลิกตัวอย่างด้านล่าง..."
+              placeholder="วางข้อความที่ถอดเสียงจากการสนทนาสายโทรศัพท์..."
               className="w-full p-4 rounded-xl bg-shield-card border border-shield-border focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 text-white placeholder-gray-500 text-sm font-mono"
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -159,7 +203,7 @@ export default function VoicePage() {
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-shield-card hover:bg-white/10 border border-shield-border text-cyan-400 transition-colors"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>โหลดตัวอย่างบทสนทนาคอลเซ็นเตอร์</span>
+                <span>คลิกเพื่อโหลดตัวอย่างบทสนทนาตำรวจปลอม</span>
               </button>
               <button
                 onClick={() => handleAnalyze()}
@@ -169,7 +213,7 @@ export default function VoicePage() {
                 {analyzing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>กำลังประมวลผล...</span>
+                    <span>กำลังวิเคราะห์...</span>
                   </>
                 ) : (
                   <span>วิเคราะห์บทสนทนา</span>
@@ -178,10 +222,10 @@ export default function VoicePage() {
             </div>
           </div>
 
-          {error && (
+          {analyzeError && (
             <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center gap-3">
               <AlertCircle className="w-5 h-5 shrink-0" />
-              <p className="text-sm">{error}</p>
+              <p className="text-sm">{analyzeError}</p>
             </div>
           )}
 
@@ -220,6 +264,16 @@ export default function VoicePage() {
               )}
 
               <RedFlagCard flags={analysis.red_flags || []} />
+
+              <div className="pt-2 flex justify-end">
+                <Link
+                  href="/report"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 font-semibold text-sm transition-all"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>ดูรายงานและหลักฐานคดีฉบับเต็ม</span>
+                </Link>
+              </div>
             </div>
           )}
         </div>
@@ -228,18 +282,37 @@ export default function VoicePage() {
       {/* Tab 2: Counter-Scam Simulator */}
       {tab === "counter" && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-300 text-sm flex items-start gap-3">
-            <Bot className="w-5 h-5 mt-0.5 shrink-0" />
-            <div>
-              <span className="font-bold">Persona ปัจจุบัน: &quot;คุณป้าใจดีแต่ขี้ลืม&quot;</span>
-              <p className="text-xs text-orange-200/80 mt-1">
-                บอทจะแกล้งทำตามขั้นตอนช้าๆ ขอให้พูดซ้ำ และดึงข้อมูลมิจฉาชีพเพื่อถ่วงเวลา
-              </p>
+          {/* Header Info */}
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-shield-card border border-shield-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/40 flex items-center justify-center">
+                <Bot className="w-5 h-5 text-orange-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Persona: คุณป้าใจดี (แกล้งงงเพื่อถ่วงเวลา)</h3>
+                <p className="text-xs text-gray-400">เป้าหมาย: ถ่วงเวลาและหลอกล่อให้มิจฉาชีพเผยข้อมูลบัญชีม้า</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 bg-cyan-500/10 px-3 py-1.5 rounded-lg border border-cyan-500/20">
+                <Clock className="w-3.5 h-3.5" />
+                <span>เวลาที่ถ่วงได้: {formatTimer(sessionSeconds)}</span>
+              </div>
+              <Link
+                href="/report"
+                className="flex items-center gap-1.5 text-xs font-bold text-slate-900 bg-purple-400 hover:bg-purple-300 px-3 py-1.5 rounded-lg transition-all"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>สร้างรายงานหลักฐาน</span>
+              </Link>
             </div>
           </div>
 
+          {/* Evidence Extraction Progress Component */}
+          <ExtractionProgress extractedInfo={extractedInfo} />
+
           {/* Chat Window */}
-          <div className="h-96 overflow-y-auto p-4 rounded-2xl bg-shield-card border border-shield-border space-y-4">
+          <div className="h-[420px] overflow-y-auto p-4 rounded-2xl bg-shield-card border border-shield-border space-y-4">
             {chatHistory.map((msg, idx) => (
               <div
                 key={idx}
@@ -253,27 +326,23 @@ export default function VoicePage() {
                   </div>
                 )}
                 <div
-                  className={`max-w-[75%] p-3.5 rounded-2xl text-sm ${
+                  className={`max-w-[80%] p-3.5 rounded-2xl text-sm ${
                     msg.speaker === "scammer"
                       ? "bg-red-500/20 border border-red-500/30 text-red-200 rounded-tr-none"
                       : "bg-shield-dark border border-shield-border text-gray-200 rounded-tl-none"
                   }`}
                 >
-                  <div className="text-[10px] uppercase font-bold mb-1 opacity-60">
-                    {msg.speaker === "scammer" ? "มิจฉาชีพ" : "AI Counter-Agent"}
+                  <div className="text-[10px] uppercase font-bold mb-1 opacity-70">
+                    {msg.speaker === "scammer" ? "มิจฉาชีพ (Scammer)" : "AI Counter-Agent"}
                   </div>
                   <p className="leading-relaxed">{msg.text}</p>
                   {msg.strategy && (
-                    <div className="mt-2 text-[11px] text-cyan-400 border-t border-white/5 pt-1">
-                      💡 กลยุทธ์: {msg.strategy}
+                    <div className="mt-2 text-[11px] text-cyan-400 border-t border-white/5 pt-1.5 flex items-center gap-1">
+                      <span>💡 กลยุทธ์:</span>
+                      <span>{msg.strategy}</span>
                     </div>
                   )}
                 </div>
-                {msg.speaker === "scammer" && (
-                  <div className="w-8 h-8 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center shrink-0">
-                    <User className="w-4 h-4 text-red-400" />
-                  </div>
-                )}
               </div>
             ))}
             {counterLoading && (
@@ -282,29 +351,47 @@ export default function VoicePage() {
                   <Bot className="w-4 h-4 text-orange-400 animate-spin" />
                 </div>
                 <div className="p-3 rounded-2xl bg-shield-dark border border-shield-border text-xs text-gray-400">
-                  AI กำลังคิดคำตอบเนียนๆ...
+                  AI กำลังพิมพ์คำตอบถ่วงเวลา...
                 </div>
               </div>
             )}
+            <div ref={chatEndRef} />
           </div>
 
-          {/* Chat Input */}
+          {/* Quick Simulation Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-400">⚡ ประโยคมิจฉาชีพจำลอง:</span>
+            <button
+              onClick={() => handleCounterSend("คุณมีคดีฟอกเงิน ต้องโอนเงินมาตรวจสอบด่วน!")}
+              className="text-xs px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300"
+            >
+              &quot;คุณมีคดีฟอกเงิน ต้องโอนด่วน!&quot;
+            </button>
+            <button
+              onClick={() => handleCounterSend("โอนเข้าบัญชีกสิกร 048-2-71893-5 จำนวน 150,000 บาท")}
+              className="text-xs px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300"
+            >
+              &quot;โอนเข้าบัญชีกสิกร 048-2-71893-5 150,000 บาท&quot;
+            </button>
+          </div>
+
+          {/* Input Box */}
           <div className="flex gap-2">
             <input
               type="text"
               value={scammerInput}
               onChange={(e) => setScammerInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCounterSend()}
-              placeholder="ลองพิมพ์คำขู่ของมิจฉาชีพ เช่น 'ถ้าไม่โอนจะออกหมายจับเดี๋ยวนี้!'"
+              placeholder="ลองพิมพ์ข้อความของมิจฉาชีพที่โทรมา..."
               className="flex-1 px-4 py-3 rounded-xl bg-shield-card border border-shield-border focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 text-white placeholder-gray-500 text-sm"
             />
             <button
-              onClick={handleCounterSend}
+              onClick={() => handleCounterSend()}
               disabled={counterLoading || !scammerInput.trim()}
-              className="px-5 py-3 rounded-xl bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-slate-950 font-bold transition-all shadow-md shrink-0 flex items-center gap-1.5"
+              className="px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-slate-950 font-bold transition-all shadow-md shrink-0 flex items-center gap-1.5"
             >
               <Send className="w-4 h-4" />
-              <span>ส่ง</span>
+              <span>ส่งข้อความ</span>
             </button>
           </div>
         </div>

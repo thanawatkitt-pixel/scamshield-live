@@ -10,6 +10,7 @@ const navItems = [
   { href: "/link", label: "ลิงก์", icon: "🔗" },
   { href: "/voice", label: "เสียง", icon: "📞" },
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/report", label: "รายงานคดี", icon: "📋" },
 ];
 
 export default function Navbar() {

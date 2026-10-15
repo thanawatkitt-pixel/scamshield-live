@@ -1,135 +1,242 @@
 "use client";
-import { useState } from "react";
-import { ShieldAlert, TrendingUp, DollarSign, Users, ExternalLink, AlertTriangle, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { TrendingUp, AlertTriangle, Shield, Users, ShieldAlert, DollarSign, Clock, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import ReportCard from "@/components/ReportCard";
 
-const stats = [
-  { label: "ตรวจจับและบล็อกภัยคุกคาม", value: "14,820 ครั้ง", icon: ShieldAlert, color: "text-red-400" },
-  { label: "มูลค่าความเสียหายที่ป้องกันได้", value: "฿48.6M", icon: DollarSign, color: "text-emerald-400" },
-  { label: "ผู้ใช้งานที่ได้รับการปกป้อง", value: "32,500+ คน", icon: Users, color: "text-cyan-400" },
-  { label: "อัตราความแม่นยำในการตรวจจับ", value: "99.4%", icon: TrendingUp, color: "text-blue-400" },
+// จำลองข้อมูลสถิติภาพรวม
+const mockStats = {
+  total_scams_detected_today: 12847,
+  money_saved_thb: 48200000,
+  accuracy_percent: 94.7,
+  active_users: 3241,
+  scams_blocked_this_hour: 534,
+};
+
+const mockTrending = [
+  {
+    rank: 1,
+    type: "แอบอ้างเจ้าหน้าที่รัฐ",
+    type_en: "Authority Impersonation",
+    count: 4521,
+    change: +12,
+    icon: "👮",
+  },
+  {
+    rank: 2,
+    type: "SMS ปลอมธนาคาร",
+    type_en: "Bank Phishing SMS",
+    count: 3876,
+    change: +8,
+    icon: "🏦",
+  },
+  {
+    rank: 3,
+    type: "หลอกลงทุนผลตอบแทนสูง",
+    type_en: "Investment Scam",
+    count: 2103,
+    change: +23,
+    icon: "📈",
+  },
+  {
+    rank: 4,
+    type: "หลอกรับพัสดุตกค้าง",
+    type_en: "Package Scam",
+    count: 1498,
+    change: -5,
+    icon: "📦",
+  },
+  {
+    rank: 5,
+    type: "หลอกรักออนไลน์ (Romance Scam)",
+    type_en: "Romance Scam",
+    count: 940,
+    change: +15,
+    icon: "💘",
+  },
 ];
 
-const scamTypes = [
-  { name: "แก๊งคอลเซ็นเตอร์อ้างเป็นตำรวจ / DSI / สรรพากร", percent: 42, count: "6,224 เคส", color: "bg-red-500" },
-  { name: "SMS แนบลิงก์กู้เงินด่วน / แจ้งบัญชีธนาคารถูกระงับ", percent: 28, count: "4,150 เคส", color: "bg-orange-500" },
-  { name: "หลอกลงทุนผลตอบแทนสูง / Forex / คริปโต", percent: 18, count: "2,668 เคส", color: "bg-purple-500" },
-  { name: "งานออนไลน์สำรองจ่าย / ปั่นยอดวิว", percent: 12, count: "1,778 เคส", color: "bg-blue-500" },
-];
-
-const recentReports = [
+const mockRecentReports = [
   {
-    time: "2 นาทีที่แล้ว",
-    type: "Phishing Link",
-    target: "kbank-verify-otp.top",
-    status: "อันตรายสูง",
-    tag: "🔴 อันตราย",
+    reportId: "SS-20261015-A1B2",
+    scamType: "แก๊งคอลเซ็นเตอร์ — แอบอ้างเจ้าหน้าที่ตำรวจกองปราบ",
+    confidence: 97,
+    threatLevel: "dangerous" as const,
+    extractedCount: 5,
+    date: "10 นาทีที่แล้ว",
   },
   {
-    time: "8 นาทีที่แล้ว",
-    type: "Call Center",
-    target: "082-xxx-4192 (อ้างเป็นร้อยเวร สภ.เมือง)",
-    status: "บล็อกแล้ว",
-    tag: "🛡️ บล็อกแล้ว",
+    reportId: "SS-20261015-K882",
+    scamType: "เว็บฟิชชิ่งเลียนแบบธนาคาร (kbank-verify-otp.top)",
+    confidence: 100,
+    threatLevel: "dangerous" as const,
+    extractedCount: 3,
+    date: "25 นาทีที่แล้ว",
   },
   {
-    time: "15 นาทีที่แล้ว",
-    type: "SMS Scam",
-    target: "คุณได้รับวงเงิน 50,000 คลิก...",
-    status: "ฟิชชิ่ง",
-    tag: "⚠️ หลอกลวง",
+    reportId: "SS-20261015-M411",
+    scamType: "SMS แนบลิงก์กู้เงินดอกเบี้ยต่ำผิดกฎหมาย",
+    confidence: 88,
+    threatLevel: "suspicious" as const,
+    extractedCount: 2,
+    date: "1 ชั่วโมงที่แล้ว",
   },
   {
-    time: "24 นาทีที่แล้ว",
-    type: "Legitimate URL",
-    target: "kasikornbank.com",
-    status: "ปลอดภัย (Whitelist)",
-    tag: "🟢 ปลอดภัย",
+    reportId: "SS-20261015-W092",
+    scamType: "การตรวจสอบเว็บไซต์ทางการธนาคาร (kasikornbank.com)",
+    confidence: 0,
+    threatLevel: "safe" as const,
+    extractedCount: 0,
+    date: "2 ชั่วโมงที่แล้ว",
   },
 ];
 
 export default function DashboardPage() {
+  const [ticker, setTicker] = useState(mockStats.scams_blocked_this_hour);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTicker((prev) => prev + 1);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-8 max-w-6xl mx-auto">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-white flex items-center gap-3">
           📊 Community Dashboard
         </h1>
         <p className="text-gray-400 mt-2">
-          ศูนย์รวมข้อมูลและสถิติภัยมิจฉาชีพออนไลน์ในประเทศไทยแบบเรียลไทม์
+          รายงานสถิติภัยมิจฉาชีพทางไซเบอร์แบบเรียลไทม์ และระบบความปลอดภัยชุมชนประเทศไทย
         </p>
       </div>
 
-      {/* Top Stat Cards */}
+      {/* Top 4 Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((s, idx) => {
-          const Icon = s.icon;
-          return (
-            <div
-              key={idx}
-              className="p-5 rounded-2xl bg-shield-card border border-shield-border shadow-md"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">{s.label}</span>
-                <Icon className={`w-5 h-5 ${s.color}`} />
-              </div>
-              <div className="text-2xl font-extrabold text-white mt-2">
-                {s.value}
-              </div>
-            </div>
-          );
-        })}
+        <div className="p-5 rounded-2xl bg-shield-card border border-shield-border shadow-md">
+          <div className="flex items-center justify-between text-gray-400 text-xs">
+            <span>ตรวจจับวันนี้</span>
+            <ShieldAlert className="w-5 h-5 text-red-400" />
+          </div>
+          <div className="text-2xl font-extrabold text-white mt-2">
+            {mockStats.total_scams_detected_today.toLocaleString()} เคส
+          </div>
+          <div className="text-xs text-red-400 mt-1 flex items-center gap-1">
+            <ArrowUpRight className="w-3.5 h-3.5" /> +14% เทียบกับเมื่อวาน
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-shield-card border border-shield-border shadow-md">
+          <div className="flex items-center justify-between text-gray-400 text-xs">
+            <span>มูลค่าความเสียหายที่ป้องกันได้</span>
+            <DollarSign className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div className="text-2xl font-extrabold text-emerald-400 mt-2">
+            ฿{(mockStats.money_saved_thb / 1_000_000).toFixed(1)} ล้านบาท
+          </div>
+          <div className="text-xs text-gray-400 mt-1">ประเมินจากมูลค่าเคสที่ถูกยับยั้ง</div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-shield-card border border-shield-border shadow-md">
+          <div className="flex items-center justify-between text-gray-400 text-xs">
+            <span>ความแม่นยำ AI</span>
+            <TrendingUp className="w-5 h-5 text-blue-400" />
+          </div>
+          <div className="text-2xl font-extrabold text-white mt-2">
+            {mockStats.accuracy_percent}%
+          </div>
+          <div className="text-xs text-emerald-400 mt-1">โมเดล ScamShield v2.0</div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-shield-card border border-shield-border shadow-md">
+          <div className="flex items-center justify-between text-gray-400 text-xs">
+            <span>สกัดกั้นชั่วโมงนี้</span>
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold text-cyan-400 mt-2">
+            {ticker.toLocaleString()} ครั้ง
+          </div>
+          <div className="text-xs text-cyan-300 mt-1 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5" /> อัปเดตแบบเรียลไทม์
+          </div>
+        </div>
       </div>
 
-      {/* Main Grid: Scam Breakdown & Recent Activity */}
+      {/* Main Grid: Trending Scams & Recent Reports */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Scam Types breakdown (2 cols) */}
+        {/* Left: Top Trending (2 cols) */}
         <div className="lg:col-span-2 p-6 rounded-2xl bg-shield-card border border-shield-border space-y-6">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <span>🚨 สถิติประเภทกลโกงยอดนิยม (เดือนนี้)</span>
-          </h2>
-          <div className="space-y-5">
-            {scamTypes.map((st, i) => (
-              <div key={i} className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-200 font-medium">{st.name}</span>
-                  <span className="text-gray-400 font-mono">{st.count} ({st.percent}%)</span>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <span>🔥 5 อันดับรูปแบบกลโกงที่ระบาดหนักที่สุด</span>
+            </h2>
+            <span className="text-xs text-gray-400 font-mono">เรียงตามความถี่สัปดาห์นี้</span>
+          </div>
+
+          <div className="space-y-4">
+            {mockTrending.map((item) => (
+              <div
+                key={item.rank}
+                className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-cyan-500/30 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{item.icon}</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-mono font-bold">
+                        #{item.rank}
+                      </span>
+                      <h3 className="text-sm font-semibold text-white">{item.type}</h3>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">{item.type_en}</p>
+                  </div>
                 </div>
-                <div className="w-full h-2.5 rounded-full bg-white/5 overflow-hidden">
+
+                <div className="text-right">
+                  <div className="text-sm font-bold text-white font-mono">
+                    {item.count.toLocaleString()} ครั้ง
+                  </div>
                   <div
-                    className={`h-full rounded-full ${st.color}`}
-                    style={{ width: `${st.percent}%` }}
-                  />
+                    className={`text-xs font-mono flex items-center justify-end gap-0.5 ${
+                      item.change > 0 ? "text-red-400" : "text-emerald-400"
+                    }`}
+                  >
+                    {item.change > 0 ? (
+                      <ArrowUpRight className="w-3 h-3" />
+                    ) : (
+                      <ArrowDownRight className="w-3 h-3" />
+                    )}
+                    {item.change > 0 ? `+${item.change}%` : `${item.change}%`}
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Right: Live Reports Feed */}
-        <div className="p-6 rounded-2xl bg-shield-card border border-shield-border space-y-4">
-          <h2 className="text-lg font-bold text-white flex items-center justify-between">
-            <span>⚡ รายงานล่าสุด</span>
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-          </h2>
+        {/* Right: Recent Reports (1 col) */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <span>📋 รายงานล่าสุด (Live)</span>
+            </h2>
+          </div>
+
           <div className="space-y-3">
-            {recentReports.map((r, i) => (
-              <div
-                key={i}
-                className="p-3 rounded-xl bg-white/5 border border-white/5 text-xs space-y-1"
-              >
-                <div className="flex justify-between text-gray-400">
-                  <span>{r.type}</span>
-                  <span>{r.time}</span>
-                </div>
-                <div className="font-mono text-gray-200 truncate">{r.target}</div>
-                <div className="text-[11px] font-semibold text-cyan-400 pt-0.5">
-                  {r.tag}
-                </div>
-              </div>
+            {mockRecentReports.map((report) => (
+              <ReportCard
+                key={report.reportId}
+                reportId={report.reportId}
+                scamType={report.scamType}
+                confidence={report.confidence}
+                threatLevel={report.threatLevel}
+                extractedCount={report.extractedCount}
+                date={report.date}
+              />
             ))}
           </div>
         </div>
