@@ -1,0 +1,25 @@
+# render.yaml — Render Blueprint for ScamShield Live
+services:
+  - type: web
+    name: scamshield-live-api
+    runtime: python
+    region: singapore # ใกล้ไทยที่สุด
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false # ใส่ใน Render Dashboard
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        value: OYTbf65OHHFELVut7v2H
+      - key: ELEVENLABS_MODEL_ID
+        value: eleven_v3
+      - key: CORS_ORIGINS
+        value: "*" # Hackathon ใช้ * ก่อน
+      - key: APP_ENV
+        value: production
+    healthCheckPath: /health
+    autoDeploy: true
